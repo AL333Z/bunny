@@ -1,4 +1,4 @@
-import java.util.concurrent.{Executors, ThreadFactory}
+import java.util.concurrent.TimeoutException
 
 import com.al333z.bunny.BunnyChannelFactory.Binding
 import com.al333z.bunny.{BunnyChannelFactory, RabbitConfig}
@@ -6,7 +6,7 @@ import com.rabbitmq.client.{Channel, ConnectionFactory}
 import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest.FunSuite
 
-import scala.util.Try
+import scala.util.{Success, Try}
 
 class BunnyChannelFactoryTest extends FunSuite {
 
@@ -24,23 +24,20 @@ class BunnyChannelFactoryTest extends FunSuite {
     // setup
     val setupChannel = createChannel(rabbitConfig).get
     createExchanges(setupChannel, "e", "topic").get
-    assert(doesExchangeExist(setupChannel, "e"))
+    assert(exchangeExist(setupChannel, "e"))
     setupChannel.close()
 
     // run
-    val tryChannel = BunnyChannelFactory(rabbitConfig)
+    val channel = BunnyChannelFactory(rabbitConfig)
       .forConsumer(
         queueName = "q",
         exchangeName = "e",
         routingKey = "k"
-      )
+      ).get
 
     // assertions
-    assert(tryChannel.isSuccess)
-    val channel = tryChannel.get
-
-    assert(doesQueueExist(channel, "q"))
-    assert(doesBindingExist(channel, "q", "e", "k"))
+    assert(queueExist(channel, "q"))
+    assert(bindingExist(channel, "q", "e", "k"))
 
     // cleanup
     channel.queueDelete("q")
@@ -54,24 +51,21 @@ class BunnyChannelFactoryTest extends FunSuite {
     val setupChannel = createChannel(rabbitConfig).get
     createExchanges(setupChannel, "e", "topic").get
     createExchanges(setupChannel, "e1", "topic").get
-    assert(doesExchangeExist(setupChannel, "e"))
-    assert(doesExchangeExist(setupChannel, "e1"))
+    assert(exchangeExist(setupChannel, "e"))
+    assert(exchangeExist(setupChannel, "e1"))
     setupChannel.close()
 
     // run
-    val tryChannel = BunnyChannelFactory(rabbitConfig)
+    val channel = BunnyChannelFactory(rabbitConfig)
       .forConsumer(
         queueName = "q",
         bindings = Binding("q", "e", "k", Map()), Binding("q", "e1", "k", Map())
-      )
+      ).get
 
     // assertions
-    assert(tryChannel.isSuccess)
-    val channel = tryChannel.get
-
-    assert(doesQueueExist(channel, "q"))
-    assert(doesBindingExist(channel, "q", "e", "k"))
-    assert(doesBindingExist(channel, "q", "e1", "k"))
+    assert(queueExist(channel, "q"))
+    assert(bindingExist(channel, "q", "e", "k"))
+    assert(bindingExist(channel, "q", "e1", "k"))
 
     // cleanup
     channel.queueDelete("q")
@@ -80,19 +74,108 @@ class BunnyChannelFactoryTest extends FunSuite {
     channel.close()
   }
 
-  private def doesExchangeExist(channel: Channel, exchangeName: String): Boolean = {
+  test("forProducerUnconfirmed") {
+
+    // run
+    val channel = BunnyChannelFactory(rabbitConfig)
+      .forProducerUnconfirmed(
+        exchangeName = "e",
+        exchangeType = "topic"
+      ).get.channel
+
+    // assertions
+    assert(exchangeExist(channel, "e"))
+    assert(!isWaitingForConfirms(channel))
+
+    // cleanup
+    channel.exchangeDelete("e")
+    channel.close()
+  }
+
+  test("forProducerUnconfirmedWithQueueBound") {
+
+    // run
+    val channel = BunnyChannelFactory(rabbitConfig)
+      .forProducerUnconfirmedWithQueueBound(
+        queueName = "q",
+        exchangeName = "e",
+        routingKey = "k"
+      ).get.channel
+
+    // assertions
+    assert(exchangeExist(channel, "e"))
+    assert(queueExist(channel, "q"))
+    assert(bindingExist(channel, "q", "e", "k"))
+    assert(!isWaitingForConfirms(channel))
+
+    // cleanup
+    channel.exchangeDelete("e")
+    channel.queueDelete("q")
+    channel.close()
+  }
+
+  test("forProducer") {
+
+    // run
+    val channel = BunnyChannelFactory(rabbitConfig)
+      .forProducer(
+        exchangeName = "e",
+        exchangeType = "topic"
+      ).get.channel
+
+    // assertions
+    assert(exchangeExist(channel, "e"))
+    assert(isWaitingForConfirms(channel))
+
+    // cleanup
+    channel.exchangeDelete("e")
+    channel.close()
+  }
+
+  test("forProducerWithQueueBound") {
+
+    // run
+    val channel = BunnyChannelFactory(rabbitConfig)
+      .forProducerWithQueueBound(
+        queueName = "q",
+        exchangeName = "e",
+        routingKey = "k"
+      ).get.channel
+
+    // assertions
+    assert(exchangeExist(channel, "e"))
+    assert(queueExist(channel, "q"))
+    assert(bindingExist(channel, "q", "e", "k"))
+    assert(isWaitingForConfirms(channel))
+
+    // cleanup
+    channel.exchangeDelete("e")
+    channel.queueDelete("q")
+    channel.close()
+  }
+
+  private def exchangeExist(channel: Channel, exchangeName: String): Boolean = {
     Try(channel.exchangeDeclarePassive(exchangeName)).isSuccess
   }
 
-  private def doesQueueExist(channel: Channel, queueName: String): Boolean = {
+  private def queueExist(channel: Channel, queueName: String): Boolean = {
     Try(channel.queueDeclarePassive(queueName)).isSuccess
   }
 
-  private def doesBindingExist(channel: Channel, queueName: String, exchangeName: String, routingKey: String): Boolean = {
-    // this is a kind of tricky
+  private def bindingExist(channel: Channel, queueName: String, exchangeName: String, routingKey: String): Boolean = {
+    // not ideal, but it's only a test
     val res = Try(channel.queueUnbind(queueName, exchangeName, routingKey)).isSuccess
     channel.queueBind(queueName, exchangeName, routingKey)
     res
+  }
+
+  private def isWaitingForConfirms(channel: Channel): Boolean = {
+    Try(channel.waitForConfirms(100))
+      .map(_ => ())
+      .recoverWith {
+        case _: TimeoutException => Success(()) // ignore timeouts, we only care about InvalidStateException
+      }
+      .isSuccess
   }
 
   private def createExchanges(channel: Channel, name: String, exchangeType: String) = Try {
@@ -106,19 +189,8 @@ class BunnyChannelFactoryTest extends FunSuite {
     factory.setUsername(rabbitConfig.username)
     factory.setPassword(rabbitConfig.password)
     factory.setVirtualHost(rabbitConfig.vhost)
-    factory.setAutomaticRecoveryEnabled(true)
     factory.setNetworkRecoveryInterval(rabbitConfig.networkRecoveryInterval.toMillis)
     factory.setRequestedHeartbeat(rabbitConfig.heartBeat.toSeconds.toInt)
-
-    factory.setThreadFactory(new ThreadFactory {
-      val defaultThreadFactory: ThreadFactory = Executors.defaultThreadFactory()
-
-      override def newThread(r: Runnable): Thread = {
-        val thread = defaultThreadFactory.newThread(r)
-        thread.setDaemon(true) // make the internal thread of RabbitMQ library doesn't prevent the JVM from exiting
-        thread
-      }
-    })
 
     val connection = factory.newConnection()
     val channel = connection.createChannel()
