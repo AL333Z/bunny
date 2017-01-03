@@ -14,7 +14,3 @@ case class RabbitConfig(
                          retryPublishTimes: Int = 1,
                          networkRecoveryInterval: FiniteDuration = 1 second
                        )
-
-object RabbitConfig {
-  def errorQueueName(queueName: String): String = queueName + "_error"
-}

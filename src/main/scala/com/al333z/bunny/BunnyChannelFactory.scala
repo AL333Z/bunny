@@ -4,16 +4,17 @@ import java.util.concurrent.{Executors, ThreadFactory}
 
 import com.al333z.bunny.BunnyChannelFactory.{Binding, Exchange, Queue}
 import com.rabbitmq.client.{Channel, ConnectionFactory}
+import com.typesafe.scalalogging.LazyLogging
 
 import scala.collection.JavaConverters._
 import scala.util.Try
 
 class BunnyChannelFactory private(
-                                    config: RabbitConfig,
-                                    queue: Option[Queue] = None,
-                                    exchange: Option[Exchange] = None,
-                                    bindings: List[Binding] = List()
-                                  ) {
+                                   config: RabbitConfig,
+                                   queue: Option[Queue] = None,
+                                   exchange: Option[Exchange] = None,
+                                   bindings: List[Binding] = List()
+                                 ) extends LazyLogging {
   /**
     * Instruct the factory to create the `queueName` queue and the binding from the `exchangeName` exchange to the
     * `queueName` queue, using `routingKey`.
@@ -117,14 +118,14 @@ class BunnyChannelFactory private(
     bindings
       .filterNot(_.exchangeName.isEmpty)
       .foreach { b =>
-        //        logger.info(s"Binding exchange:[${b.exchangeName}] -> queue:[${b.queueName}] with key:[${b.routingKey}]")
+        logger.info(s"Binding exchange:[${b.exchangeName}] -> queue:[${b.queueName}] with key:[${b.routingKey}]")
         channel.queueBind(b.queueName, b.exchangeName, b.routingKey, b.args.asJava)
       }
   }
 
   private def createQueues(channel: Channel) = Try {
     queue.foreach(q => {
-      //      logger.info(s"Creating rabbit queue: ${q.name} on [${config.host}]")
+      logger.info(s"Creating rabbit queue: ${q.name} on [${config.host}]")
       channel.queueDeclare(q.name, true, false, false, null)
     })
   }
@@ -133,8 +134,8 @@ class BunnyChannelFactory private(
     exchange
       .filterNot(_.name.isEmpty)
       .foreach(q => {
-        //        logger.info(s"Creating rabbit exchange: [${q.name},${q.routingKey}] on [${config.host}]")
-        channel.exchangeDeclare(q.name, q.routingKey, true)
+        logger.info(s"Creating rabbit exchange: [${q.name},${q.exchangeType}] on [${config.host}]")
+        channel.exchangeDeclare(q.name, q.exchangeType, true)
       })
   }
 
@@ -159,8 +160,9 @@ class BunnyChannelFactory private(
       }
     })
 
-    //    logger.info(s"Connecting to rabbit on: ${rabbitConfig.host}/${rabbitConfig.vhost} with " +
-    //      s"prefetchCount ${rabbitConfig.prefetchCount}, heartbeat ${rabbitConfig.heartBeat}")
+    logger.info(s"Connecting to rabbit on: ${rabbitConfig.host}/${rabbitConfig.vhost} with " +
+      s"prefetchCount ${rabbitConfig.prefetchCount}, heartbeat ${rabbitConfig.heartBeat}")
+
     val connection = factory.newConnection()
     val channel = connection.createChannel()
     channel.basicQos(rabbitConfig.prefetchCount)
@@ -178,7 +180,7 @@ object BunnyChannelFactory {
 
   case class Binding(queueName: String, exchangeName: String, routingKey: String, args: Map[String, AnyRef])
 
-  private case class Exchange(name: String, routingKey: String)
+  private case class Exchange(name: String, exchangeType: String)
 
   private case class Queue(name: String)
 
