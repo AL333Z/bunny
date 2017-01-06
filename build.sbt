@@ -15,7 +15,11 @@ organization := "com.al333z"
 
 licenses := Seq("Apache 2.0" -> url("http://www.opensource.org/licenses/Apache-2.0"))
 
+homepage := Some(url("http://github.com/AL333Z/bunny.git"))
+
 crossScalaVersions := Seq("2.11.8", "2.12.1")
+
+releaseCrossBuild := true
 
 scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature", "-Xfatal-warnings", "-target:jvm-1.8")
 
