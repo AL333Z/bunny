@@ -41,10 +41,10 @@ publishTo := {
 }
 
 pomExtra :=
-    <scm>
-      <url>git@github.com:AL333Z/bunny.git</url>
-      <connection>scm:git:git@github.com:AL333Z/bunny.git</connection>
-    </scm>
+  <scm>
+    <url>git@github.com:AL333Z/bunny.git</url>
+    <connection>scm:git:git@github.com:AL333Z/bunny.git</connection>
+  </scm>
     <developers>
       <developer>
         <id>al333z</id>
@@ -93,7 +93,7 @@ releaseProcess := Seq(
   runClean,
   setReleaseVersionCustom(),
   tagRelease,
-  ReleaseStep(action = Command.process("publishSigned", _)),
-  ReleaseStep(action = Command.process("sonatypeRelease", _)),
+  ReleaseStep(action = Command.process("publishSigned", _), enableCrossBuild = true),
+  ReleaseStep(action = Command.process("sonatypeReleaseAll", _), enableCrossBuild = true),
   pushChanges
 )
