@@ -47,4 +47,7 @@ The methods that `BunnyChannelFactory` offers are:
 - other additional two methods `forProducerWithQueueBound` and `forProducerUnconfirmedWithQueueBound`, which are like the previous but will also create a binding to a queue. One use case for these two are for supporting error queues.
 
 ## Installation
-TODO
+
+```
+libraryDependencies += "com.al333z" %% "bunny" % "0.0.4"
+```
